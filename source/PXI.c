@@ -73,7 +73,7 @@ void PXIReceiveBuffer(u32 *buffer, u32 nbWords)
 {
     for(; nbWords > 0; nbWords--)
     {
-        while(REG_PXI_CNT & CNT_SEND_FIFO_FULL_STATUS);
+        while(REG_PXI_CNT & CNT_RECEIVE_FIFO_EMPTY_STATUS);
         *buffer++ = REG_PXI_RECV;
     }
 }
