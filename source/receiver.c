@@ -18,6 +18,8 @@ static inline void receiveArm9Reply(void)
     if(serviceId >= 10 || sessionManager.sessionData[serviceId].state != STATE_ARM9_COMMAND_SENT)
         svcBreak(USERBREAK_PANIC);
 
+    sessionManager.receivedServiceId = serviceId;
+    RecursiveLock_Lock(&(sessionManager.sessionData[serviceId].lock));
     u32 replyHeader = PXIReceiveWord();
     u32 replySizeWords = (replyHeader & 0x3F) + ((replyHeader & 0xFC0) >> 6) + 1;
 
@@ -27,16 +29,16 @@ static inline void receiveArm9Reply(void)
 
     buf[0] = replyHeader;
     PXIReceiveBuffer(buf + 1, replySizeWords - 1);
+    sessionManager.sessionData[serviceId].state = STATE_ARM9_REPLY_RECEIVED;
+    RecursiveLock_Unlock(&(sessionManager.sessionData[serviceId].lock));
 
     if(serviceId == 0 && shouldTerminate)
     {
         assertSuccess(svcSignalEvent(terminationRequestedEvent));
         return;
     }
-
     if(serviceId != 9)
     {
-        sessionManager.receivedServiceId = serviceId;
         s32 count;
         assertSuccess(svcReleaseSemaphore(&count, sessionManager.replySemaphore, 1));
     }

@@ -44,6 +44,32 @@ Result sendPXICommand(Handle *additionalHandle, u32 serviceId, u32 *buffer)
     return 0;
 }
 
+static void acquireStaticBuffers(void)
+{
+    u32 *staticBufs = getThreadStaticBuffers();
+    u32 freeStaticBuffersOrig = sessionManager.freeStaticBuffers;
+    for(u32 i = 0; i < 4; i++)
+    {
+        s32 pos = getMSBPosition(sessionManager.freeStaticBuffers);
+        if(pos != -1)
+        {
+            staticBufs[2 * i] = IPC_Desc_StaticBuffer(0x1000, i);
+            staticBufs[2 * i + 1] = (u32)&(staticBuffers[pos]);
+            sessionManager.freeStaticBuffers &= ~(1 << pos);
+        }
+        else 
+            staticBufs[2 * i] = IPC_Desc_StaticBuffer(0, i);
+    }
+    sessionManager.currentlyProvidedStaticBuffers = ~sessionManager.freeStaticBuffers & freeStaticBuffersOrig; 
+}
+
+static void releaseStaticBuffers(u32 *src, u32 nb)
+{
+    u32 val = clearMSBs(*src, nb);
+    sessionManager.freeStaticBuffers |= ~val & *src;
+    *src = val;
+}
+
 void sender(void)
 {
 
@@ -53,20 +79,14 @@ void sender(void)
     s32 index = 0;
 
     u32 *cmdbuf = getThreadCommandBuffer();
-    u32 *staticBufs = getThreadStaticBuffers();
 
     u32 nbIdleSessions = 0;
     u32 posToServiceId[10] = {0};
     RecursiveLock_Lock(&(sessionManager.senderLock));
 
-    for(u32 i = 0; i < 4; i++) //Setting static buffers is needed for IPC translation types 2 and 3 (otherwise ReplyAndReceive will dereference NULL)
-    {
-        staticBufs[2 * i] = IPC_Desc_StaticBuffer(0x1000, i); //the official PXI sysmodule uses id = 0
-        staticBufs[2 * i + 1] = (u32)&(staticBuffers[i]);
-    }
-
-    sessionManager.freeStaticBuffers = (1 << (NB_STATIC_BUFFERS - 4)) - 1;
-    sessionManager.currentlyProvidedStaticBuffers = ~sessionManager.freeStaticBuffers & ((1 << NB_STATIC_BUFFERS) - 1);
+    //Setting static buffers is needed for IPC translation types 2 and 3 (otherwise ReplyAndReceive will dereference NULL)
+    sessionManager.freeStaticBuffers = (1 << NB_STATIC_BUFFERS) - 1;
+    acquireStaticBuffers();
 
     do
     {               
@@ -88,8 +108,10 @@ void sender(void)
                 else
                     (sessionManager.pendingArm9Commands)++;
                 
+                RecursiveLock_Lock(&(data->lock));
                 data->state = STATE_ARM9_COMMAND_SENT;
                 res = sendPXICommand(&terminationRequestedEvent, i, data->buffer);
+                RecursiveLock_Unlock(&(data->lock));
                 
                 if(R_FAILED(res))
                     goto terminate;
@@ -144,6 +166,13 @@ void sender(void)
         }
         else if(index == 2) //arm9 reply
         {
+            u32 sessionId = 0;
+            for(sessionId = 0; sessionId < 10 && sessionManager.sessionData[sessionId].state != STATE_ARM9_REPLY_RECEIVED; sessionId++);
+            if(sessionId == 10) svcBreak(USERBREAK_PANIC);
+            SessionData *data = &(sessionManager.sessionData[sessionId]);
+
+            RecursiveLock_Lock(&(data->lock));
+            if(data->state != STATE_ARM9_REPLY_RECEIVED) svcBreak(USERBREAK_PANIC);
             if(sessionManager.latest_PXI_MC5_val == 2)
             {
                 if(sessionManager.pendingArm9Commands != 0) svcBreak(USERBREAK_PANIC);
@@ -152,21 +181,23 @@ void sender(void)
             else if(sessionManager.latest_PXI_MC5_val == 0) 
                 (sessionManager.pendingArm9Commands)--;
 
-            SessionData *data = &(sessionManager.sessionData[sessionManager.receivedServiceId]);
             u32 bufSize = 4 * ((data->buffer[0] & 0x3F) + ((data->buffer[0] & 0xFC0) >> 6) + 1);
             if(bufSize > 0x100) svcBreak(USERBREAK_PANIC);
             memcpy(cmdbuf, data->buffer, bufSize);
 
-            sessionManager.freeStaticBuffers |= data->usedStaticBuffers; //unlock the static buffers we used to hold data
-            data->usedStaticBuffers = 0;
+            releaseStaticBuffers(&(data->usedStaticBuffers), 4);
 
             data->state = STATE_IDLE;
             replyTarget = data->handle;
+            
+            RecursiveLock_Unlock(&(data->lock));
+
         }
         else // arm11 command received
         {
             u32 serviceId = posToServiceId[index - 3];
             SessionData *data = &(sessionManager.sessionData[serviceId]);
+            RecursiveLock_Lock(&(data->lock));
 
             if(data->state != STATE_IDLE) svcBreak(USERBREAK_PANIC);
 
@@ -191,30 +222,12 @@ void sender(void)
             data->state = STATE_ARM11_COMMAND_RECEIVED;
             replyTarget = (Handle) 0;
 
-            data->usedStaticBuffers = sessionManager.currentlyProvidedStaticBuffers; //lock some static buffers until Process9 replies
-            u32 nbBits = countNbBitsSet(data->usedStaticBuffers);
-            if(nbBits < nbStaticBuffersByService[serviceId]) svcBreak(USERBREAK_PANIC); //should never happen
-            data->usedStaticBuffers = clearMSBs(data->usedStaticBuffers, nbBits - nbStaticBuffersByService[serviceId]);
+            releaseStaticBuffers(&(sessionManager.currentlyProvidedStaticBuffers), 4 - nbStaticBuffersByService[serviceId]);
+            data->usedStaticBuffers = sessionManager.currentlyProvidedStaticBuffers;
+            acquireStaticBuffers();
+            
+            RecursiveLock_Unlock(&(data->lock));
 
-            sessionManager.freeStaticBuffers &= ~(data->usedStaticBuffers);
-
-            //provide some static buffers
-            u32 freeStaticBuffers = sessionManager.freeStaticBuffers;
-            for(u32 i = 0; i < 4; i++)
-            {
-                s32 pos = getMSBPosition(freeStaticBuffers);
-                if(pos != -1)
-                {
-                    staticBufs[2 * i] = IPC_Desc_StaticBuffer(0x1000, i);
-                    staticBufs[2 * i + 1] = (u32)&(staticBuffers[NB_STATIC_BUFFERS - 1 - pos]);
-                    freeStaticBuffers &= ~(1 << pos);
-                }
-                else 
-                {
-                    staticBufs[2 * i] = IPC_Desc_StaticBuffer(0, i);
-                }
-            }
-            sessionManager.currentlyProvidedStaticBuffers = ~freeStaticBuffers & sessionManager.freeStaticBuffers; 
         }
     }
     while(!shouldTerminate);

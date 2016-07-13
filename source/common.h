@@ -41,6 +41,8 @@ typedef enum SessionState
     STATE_IDLE = 0,
     STATE_ARM11_COMMAND_RECEIVED = 1,
     STATE_ARM9_COMMAND_SENT = 2,
+        STATE_ARM9_REPLY_RECEIVED = 3,
+
 } SessionState;
 
 typedef struct SessionData
@@ -51,7 +53,9 @@ typedef struct SessionData
     Handle handle;
     u32 usedStaticBuffers;
 
-} SessionData; 
+    RecursiveLock lock; //why is this needed?
+
+} SessionData;
 
 #define NB_STATIC_BUFFERS 21
 
