@@ -53,12 +53,12 @@ static void acquireStaticBuffers(void)
         s32 pos = getMSBPosition(sessionManager.freeStaticBuffers);
         if(pos != -1)
         {
-            staticBufs[2 * i] = IPC_Desc_StaticBuffer(0x1000, i);
+            staticBufs[2 * i] = IPC_Desc_StaticBuffer(0x1000, 0);
             staticBufs[2 * i + 1] = (u32)&(staticBuffers[pos]);
             sessionManager.freeStaticBuffers &= ~(1 << pos);
         }
         else 
-            staticBufs[2 * i] = IPC_Desc_StaticBuffer(0, i);
+            staticBufs[2 * i] = IPC_Desc_StaticBuffer(0, 0);
     }
     sessionManager.currentlyProvidedStaticBuffers = ~sessionManager.freeStaticBuffers & freeStaticBuffersOrig; 
 }
