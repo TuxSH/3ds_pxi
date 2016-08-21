@@ -1,6 +1,7 @@
 /*
 sender.c
     Handles commands from arm11 processes, then sends them to Process9, and replies to arm11 processes the replies received from Process9 (=> receiver.c).
+    (except for PXISRV11)
 
 (c) TuxSH, 2016
 This is part of 3ds_pxi, which is licensed under the MIT license (see LICENSE for details).
@@ -193,7 +194,7 @@ void sender(void)
             RecursiveLock_Unlock(&(data->lock));
 
         }
-        else // arm11 command received
+        else //arm11 command received
         {
             u32 serviceId = posToServiceId[index - 3];
             SessionData *data = &(sessionManager.sessionData[serviceId]);
@@ -240,4 +241,39 @@ terminate:
     }
 
     RecursiveLock_Unlock(&(sessionManager.senderLock));
+}
+
+void PXISRV11Handler(void)
+{
+    // Assumption: only 1 request is sent to this service at a time
+    Handle handles[] = {sessionManager.PXISRV11CommandReceivedEvent, terminationRequestedEvent};
+
+    while(true)
+    {
+        s32 index;
+        assertSuccess(svcWaitSynchronizationN(&index, handles, 2, false, -1LL));
+
+        if(index == 1) return;
+        else
+        {
+            SessionData *data = &(sessionManager.sessionData[9]);
+            RecursiveLock_Lock(&(data->lock));
+            
+            if(data->buffer[0] >> 16 != 1)
+            {
+                data->buffer[0] = 0x40;
+                data->buffer[1] = 0xD900182F; //unimplemented/invalid command
+            }
+            else
+            {
+                data->buffer[0] = 0x10040;
+                data->buffer[1] = srvPublishToSubscriber(data->buffer[1], 1);
+                if(data->buffer[1] == 0xD8606408)
+                    svcBreak(USERBREAK_PANIC);
+            }
+
+            assertSuccess(sendPXICommand(&terminationRequestedEvent, 9, data->buffer));
+            RecursiveLock_Unlock(&(data->lock));
+        }
+    }
 }

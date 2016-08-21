@@ -41,8 +41,7 @@ typedef enum SessionState
     STATE_IDLE = 0,
     STATE_ARM11_COMMAND_RECEIVED = 1,
     STATE_ARM9_COMMAND_SENT = 2,
-        STATE_ARM9_REPLY_RECEIVED = 3,
-
+    STATE_ARM9_REPLY_RECEIVED = 3
 } SessionState;
 
 typedef struct SessionData
@@ -61,7 +60,7 @@ typedef struct SessionData
 
 typedef struct SessionManager
 {
-    Handle sendAllBuffersToArm9Event, replySemaphore;
+    Handle sendAllBuffersToArm9Event, replySemaphore, PXISRV11CommandReceivedEvent;
     u32 latest_PXI_MC5_val, pendingArm9Commands;
     u32 receivedServiceId;
     RecursiveLock senderLock;

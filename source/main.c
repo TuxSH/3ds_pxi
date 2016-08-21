@@ -32,7 +32,7 @@ const char *serviceNames[10] =
     "pxi:dev", //in the official PXI module maxSessions(pxi:dev) == 2. It doesn't matter anyways, since srvSysRegisterService is always called with 1
     "pxi:am9",
     "pxi:ps9",
-    //"pxi_11" //(what 3dbrew calls it). I don't think it's implemented anywhere but we have to listen to it and ignore P9 "responses" for it (it was probably deleted)
+    "pxi:srv11"
 };
 
 const u32 nbStaticBuffersByService[10] = {0, 2, 2, 2, 2, 1, 4, 4, 4, 0};
@@ -94,8 +94,9 @@ static inline void exitPXI(void)
     PXIReset();
 }
 
-static u8 receiverStack[THREAD_STACK_SIZE];
-static u8 senderStack[THREAD_STACK_SIZE];
+static u8 __attribute__((aligned(THREAD_STACK_SIZE))) receiverStack[THREAD_STACK_SIZE];
+static u8 __attribute__((aligned(THREAD_STACK_SIZE))) senderStack[THREAD_STACK_SIZE];
+static u8 __attribute__((aligned(THREAD_STACK_SIZE))) PXISRV11HandlerStack[THREAD_STACK_SIZE];
 
 // this is called before main
 void __appInit()
@@ -104,7 +105,7 @@ void __appInit()
     
     assertSuccess(svcCreateEvent(&(sessionManager.sendAllBuffersToArm9Event), RESET_ONESHOT));
     assertSuccess(svcCreateSemaphore(&(sessionManager.replySemaphore), 0, 9));
-
+    assertSuccess(svcCreateEvent(&(sessionManager.PXISRV11CommandReceivedEvent), RESET_ONESHOT));
     initPXI();
     assertSuccess(srvInit());
 }
@@ -118,6 +119,7 @@ void __appExit()
     svcCloseHandle(terminationRequestedEvent);
     svcCloseHandle(sessionManager.sendAllBuffersToArm9Event);
     svcCloseHandle(sessionManager.replySemaphore);
+    svcCloseHandle(sessionManager.PXISRV11CommandReceivedEvent);
 }
 
 // stubs for non-needed pre-main functions
@@ -143,15 +145,15 @@ void initSystem()
 
 int main(void)
 {
-
     Handle handles[10] = {(Handle)0}; //notification handle + service handles
-    MyThread receiverThread = {0}, senderThread = {0}; 
+    MyThread receiverThread = {0}, senderThread = {0}, PXISRV11HandlerThread = {0}; 
 
     for(u32 i = 0; i < 9; i++)
         assertSuccess(srvRegisterService(handles + 1 + i, serviceNames[i], 1));
 
     assertSuccess(MyThread_Create(&receiverThread, receiver, receiverStack, 0x2D, -2));
     assertSuccess(MyThread_Create(&senderThread, sender, senderStack, 0x2D, -2));
+    assertSuccess(MyThread_Create(&PXISRV11HandlerThread, PXISRV11Handler, PXISRV11HandlerStack, 0x2D, -2));
 
     assertSuccess(srvEnableNotification(&handles[0]));
 
@@ -190,6 +192,7 @@ int main(void)
 
     assertSuccess(MyThread_Join(&receiverThread, -1LL));
     assertSuccess(MyThread_Join(&senderThread, -1LL));
+    assertSuccess(MyThread_Join(&PXISRV11HandlerThread, -1LL));
 
     for(u32 i = 0; i < 10; i++)
         svcCloseHandle(handles[i]);

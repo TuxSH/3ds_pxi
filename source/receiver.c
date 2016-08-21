@@ -37,10 +37,15 @@ static inline void receiveArm9Reply(void)
         assertSuccess(svcSignalEvent(terminationRequestedEvent));
         return;
     }
+
     if(serviceId != 9)
     {
         s32 count;
         assertSuccess(svcReleaseSemaphore(&count, sessionManager.replySemaphore, 1));
+    }
+    else
+    {
+        assertSuccess(svcSignalEvent(sessionManager.PXISRV11CommandReceivedEvent));
     }
 }
 
