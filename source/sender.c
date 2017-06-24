@@ -206,7 +206,7 @@ void sender(void)
 
             if(data->state != STATE_IDLE) svcBreak(USERBREAK_PANIC);
 
-            if(!(serviceId == 0 && (cmdbuf[0] >> 16) != 5)) //if not pxi:mc 5
+            if(!(serviceId == 0 && (cmdbuf[0] >> 16) == 5)) //if not pxi:mc 5
                 sessionManager.latest_PXI_MC5_val = 0;
             else if((u8)(cmdbuf[1]) != 0)
             {
