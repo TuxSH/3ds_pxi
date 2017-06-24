@@ -38,7 +38,7 @@ const char *serviceNames[10] =
 
 const u32 nbStaticBuffersByService[10] = {0, 2, 2, 2, 2, 1, 4, 4, 4, 0};
 
-u32 __attribute__((aligned(0x1000))) staticBuffers[NB_STATIC_BUFFERS][0x400] = {{0}};
+u32 ALIGN(0x1000) staticBuffers[NB_STATIC_BUFFERS][0x400] = {{0}};
 
 static inline void initPXI(void)
 {
@@ -95,9 +95,9 @@ static inline void exitPXI(void)
     PXIReset();
 }
 
-static u8 __attribute__((aligned(THREAD_STACK_SIZE))) receiverStack[THREAD_STACK_SIZE];
-static u8 __attribute__((aligned(THREAD_STACK_SIZE))) senderStack[THREAD_STACK_SIZE];
-static u8 __attribute__((aligned(THREAD_STACK_SIZE))) PXISRV11HandlerStack[THREAD_STACK_SIZE];
+static u8 ALIGN(8) receiverStack[THREAD_STACK_SIZE];
+static u8 ALIGN(8) senderStack[THREAD_STACK_SIZE];
+static u8 ALIGN(8) PXISRV11HandlerStack[THREAD_STACK_SIZE];
 
 // this is called before main
 void __appInit()
