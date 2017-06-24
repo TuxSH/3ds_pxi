@@ -44,9 +44,7 @@ static inline void receiveArm9Reply(void)
         assertSuccess(svcReleaseSemaphore(&count, sessionManager.replySemaphore, 1));
     }
     else
-    {
         assertSuccess(svcSignalEvent(sessionManager.PXISRV11CommandReceivedEvent));
-    }
 }
 
 void receiver(void)

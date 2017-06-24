@@ -104,11 +104,17 @@ void __appInit()
 {
     assertSuccess(svcCreateEvent(&terminationRequestedEvent, RESET_STICKY));
 
-    assertSuccess(svcCreateEvent(&(sessionManager.sendAllBuffersToArm9Event), RESET_ONESHOT));
-    assertSuccess(svcCreateSemaphore(&(sessionManager.replySemaphore), 0, 9));
-    assertSuccess(svcCreateEvent(&(sessionManager.PXISRV11CommandReceivedEvent), RESET_ONESHOT));
+    assertSuccess(svcCreateEvent(&sessionManager.sendAllBuffersToArm9Event, RESET_ONESHOT));
+    assertSuccess(svcCreateSemaphore(&sessionManager.replySemaphore, 0, 9));
+    assertSuccess(svcCreateEvent(&sessionManager.PXISRV11CommandReceivedEvent, RESET_ONESHOT));
     initPXI();
-    assertSuccess(srvInit());
+
+    for(Result res = 0xD88007FA; res == (Result)0xD88007FA; svcSleepThread(500 * 1000LL))
+    {
+        res = srvInit();
+        if(R_FAILED(res) && res != (Result)0xD88007FA)
+            svcBreak(USERBREAK_PANIC);
+    }
 }
 
 // this is called after main exits

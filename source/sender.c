@@ -164,9 +164,7 @@ void sender(void)
 
 
         if(index == 0) //terminaton requested
-        {
             break;
-        }
         else if(index == 1)
         {
             replyTarget = 0;
@@ -199,13 +197,12 @@ void sender(void)
             replyTarget = data->handle;
 
             RecursiveLock_Unlock(&data->lock);
-
         }
         else //arm11 command received
         {
             u32 serviceId = posToServiceId[index - 3];
             SessionData *data = &(sessionManager.sessionData[serviceId]);
-            RecursiveLock_Lock(&(data->lock));
+            RecursiveLock_Lock(&data->lock);
 
             if(data->state != STATE_IDLE) svcBreak(USERBREAK_PANIC);
 
@@ -234,7 +231,7 @@ void sender(void)
             data->usedStaticBuffers = sessionManager.currentlyProvidedStaticBuffers;
             acquireStaticBuffers();
 
-            RecursiveLock_Unlock(&(data->lock));
+            RecursiveLock_Unlock(&data->lock);
 
         }
     }
@@ -243,7 +240,7 @@ void sender(void)
 terminate:
     for(u32 i = 0; i < 10; i++)
     {
-        if(sessionManager.sessionData[i].handle != (Handle)0)
+        if(sessionManager.sessionData[i].handle != 0)
             svcCloseHandle(sessionManager.sessionData[i].handle);
     }
 
