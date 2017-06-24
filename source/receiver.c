@@ -10,12 +10,12 @@ This is part of 3ds_pxi, which is licensed under the MIT license (see LICENSE fo
 #include "PXI.h"
 #include "memory.h"
 
-static inline void receiveArm9Reply(void)
+static inline void receiveFromArm9(void)
 {
     u32 serviceId = PXIReceiveWord();
 
     //The offcical implementation can return 0xD90043FA
-    if(serviceId >= 10 || sessionManager.sessionData[serviceId].state != STATE_ARM9_COMMAND_SENT)
+    if(serviceId >= 10 || (sessionManager.sessionData[serviceId].state != STATE_SENT_TO_ARM9))
         svcBreak(USERBREAK_PANIC);
 
     sessionManager.receivedServiceId = serviceId;
@@ -29,7 +29,7 @@ static inline void receiveArm9Reply(void)
 
     buf[0] = replyHeader;
     PXIReceiveBuffer(buf + 1, replySizeWords - 1);
-    sessionManager.sessionData[serviceId].state = STATE_ARM9_REPLY_RECEIVED;
+    sessionManager.sessionData[serviceId].state = STATE_RECEIVED_FROM_ARM9;
     RecursiveLock_Unlock(&sessionManager.sessionData[serviceId].lock);
 
     if(serviceId == 0 && shouldTerminate)
@@ -58,6 +58,6 @@ void receiver(void)
 
         if(index == 1) return;
         while(!PXIIsReceiveFIFOEmpty())
-            receiveArm9Reply();
+            receiveFromArm9();
     }
 }

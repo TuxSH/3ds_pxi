@@ -39,9 +39,9 @@ const ServiceInfo servicesInfo[10] =
 typedef enum SessionState
 {
     STATE_IDLE = 0,
-    STATE_ARM11_COMMAND_RECEIVED = 1,
-    STATE_ARM9_COMMAND_SENT = 2,
-    STATE_ARM9_REPLY_RECEIVED = 3
+    STATE_RECEIVED_FROM_ARM11 = 1,
+    STATE_SENT_TO_ARM9 = 2,
+    STATE_RECEIVED_FROM_ARM9 = 3
 } SessionState;
 
 typedef struct SessionData

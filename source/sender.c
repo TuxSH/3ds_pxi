@@ -80,8 +80,7 @@ static void releaseStaticBuffers(u32 *src, u32 nb)
 
 void sender(void)
 {
-
-    Handle handles[13] = {terminationRequestedEvent, sessionManager.sendAllBuffersToArm9Event, sessionManager.replySemaphore};
+    Handle handles[12] = {terminationRequestedEvent, sessionManager.sendAllBuffersToArm9Event, sessionManager.replySemaphore};
     Handle replyTarget = 0;
     Result res = 0;
     s32 index = 0;
@@ -89,7 +88,7 @@ void sender(void)
     u32 *cmdbuf = getThreadCommandBuffer();
 
     u32 nbIdleSessions = 0;
-    u32 posToServiceId[10] = {0};
+    u32 posToServiceId[9] = {0};
     RecursiveLock_Lock(&sessionManager.senderLock);
 
     //Setting static buffers is needed for IPC translation types 2 and 3 (otherwise ReplyAndReceive will dereference NULL)
@@ -101,10 +100,10 @@ void sender(void)
 
         if(replyTarget == 0) //send to arm9
         {
-            for(u32 i = 0; i < 10; i++)
+            for(u32 i = 0; i < 9; i++)
             {
                 SessionData *data = &sessionManager.sessionData[i];
-                if(data->handle == 0 || data->state != STATE_ARM11_COMMAND_RECEIVED)
+                if(data->handle == 0 || data->state != STATE_RECEIVED_FROM_ARM11)
                     continue;
 
                 if(sessionManager.sendingDisabled)
@@ -117,7 +116,7 @@ void sender(void)
                     sessionManager.pendingArm9Commands++;
 
                 RecursiveLock_Lock(&data->lock);
-                data->state = STATE_ARM9_COMMAND_SENT;
+                data->state = STATE_SENT_TO_ARM9;
                 res = sendPXICommand(&terminationRequestedEvent, i, data->buffer);
                 RecursiveLock_Unlock(&data->lock);
 
@@ -129,9 +128,9 @@ void sender(void)
         }
 
         nbIdleSessions = 0;
-        for(u32 i = 0; i < 10; i++)
+        for(u32 i = 0; i < 9; i++)
         {
-            if(sessionManager.sessionData[i].handle != (Handle)0 && sessionManager.sessionData[i].state == STATE_IDLE)
+            if(sessionManager.sessionData[i].handle != 0 && sessionManager.sessionData[i].state == STATE_IDLE)
             {
                 handles[3 + nbIdleSessions] = sessionManager.sessionData[i].handle;
                 posToServiceId[nbIdleSessions++] = i;
@@ -147,12 +146,12 @@ void sender(void)
             u32 i;
 
             if(index == -1)
-                for(i = 0; i < 10 && replyTarget != sessionManager.sessionData[i].handle; i++);
+                for(i = 0; i < 9 && replyTarget != sessionManager.sessionData[i].handle; i++);
 
             else
                 i = posToServiceId[index - 3];
 
-            if(i >= 10) svcBreak(USERBREAK_PANIC);
+            if(i >= 9) svcBreak(USERBREAK_PANIC);
 
             svcCloseHandle(sessionManager.sessionData[i].handle);
             sessionManager.sessionData[i].handle = replyTarget = 0;
@@ -173,12 +172,12 @@ void sender(void)
         else if(index == 2) //arm9 reply
         {
             u32 sessionId = 0;
-            for(sessionId = 0; sessionId < 10 && sessionManager.sessionData[sessionId].state != STATE_ARM9_REPLY_RECEIVED; sessionId++);
-            if(sessionId == 10) svcBreak(USERBREAK_PANIC);
+            for(sessionId = 0; sessionId < 9 && sessionManager.sessionData[sessionId].state != STATE_RECEIVED_FROM_ARM9; sessionId++);
+            if(sessionId == 9) svcBreak(USERBREAK_PANIC);
             SessionData *data = &sessionManager.sessionData[sessionId];
 
             RecursiveLock_Lock(&data->lock);
-            if(data->state != STATE_ARM9_REPLY_RECEIVED) svcBreak(USERBREAK_PANIC);
+            if(data->state != STATE_RECEIVED_FROM_ARM9) svcBreak(USERBREAK_PANIC);
             if(sessionManager.latest_PXI_MC5_val == 2)
             {
                 if(sessionManager.pendingArm9Commands != 0) svcBreak(USERBREAK_PANIC);
@@ -201,7 +200,7 @@ void sender(void)
         else //arm11 command received
         {
             u32 serviceId = posToServiceId[index - 3];
-            SessionData *data = &(sessionManager.sessionData[serviceId]);
+            SessionData *data = &sessionManager.sessionData[serviceId];
             RecursiveLock_Lock(&data->lock);
 
             if(data->state != STATE_IDLE) svcBreak(USERBREAK_PANIC);
@@ -224,7 +223,7 @@ void sender(void)
             if(bufSize > 0x100) svcBreak(USERBREAK_PANIC);
             memcpy(data->buffer, cmdbuf, bufSize);
 
-            data->state = STATE_ARM11_COMMAND_RECEIVED;
+            data->state = STATE_RECEIVED_FROM_ARM11;
             replyTarget = 0;
 
             releaseStaticBuffers(&sessionManager.currentlyProvidedStaticBuffers, 4 - nbStaticBuffersByService[serviceId]);
@@ -238,7 +237,7 @@ void sender(void)
     while(!shouldTerminate);
 
 terminate:
-    for(u32 i = 0; i < 10; i++)
+    for(u32 i = 0; i < 9; i++)
     {
         if(sessionManager.sessionData[i].handle != 0)
             svcCloseHandle(sessionManager.sessionData[i].handle);
@@ -251,6 +250,9 @@ void PXISRV11Handler(void)
 {
     // Assumption: only 1 request is sent to this service at a time
     Handle handles[] = {sessionManager.PXISRV11CommandReceivedEvent, terminationRequestedEvent};
+    SessionData *data = &sessionManager.sessionData[9];
+
+    data->state = STATE_SENT_TO_ARM9;
 
     while(true)
     {
@@ -260,8 +262,12 @@ void PXISRV11Handler(void)
         if(index == 1) return;
         else
         {
-            SessionData *data = &sessionManager.sessionData[9];
             RecursiveLock_Lock(&data->lock);
+
+            if(data->state != STATE_RECEIVED_FROM_ARM9)
+                svcBreak(USERBREAK_PANIC);
+
+            data->state = STATE_IDLE;
 
             if(data->buffer[0] >> 16 != 1)
             {
@@ -272,11 +278,14 @@ void PXISRV11Handler(void)
             {
                 data->buffer[0] = 0x10040;
                 data->buffer[1] = srvPublishToSubscriber(data->buffer[1], 1);
+
+                data->state = STATE_RECEIVED_FROM_ARM11;
                 if(data->buffer[1] == 0xD8606408)
                     svcBreak(USERBREAK_PANIC);
             }
 
             assertSuccess(sendPXICommand(&terminationRequestedEvent, 9, data->buffer));
+            data->state = STATE_SENT_TO_ARM9;
             RecursiveLock_Unlock(&data->lock);
         }
     }
