@@ -10,6 +10,6 @@ This is part of 3ds_pxi, which is licensed under the MIT license (see LICENSE fo
 
 #include "common.h"
 
-Result sendPXICommand(Handle *additionalHandle, u32 serviceId, u32 *buffer);
+Result sendPXICmdbuf(Handle *additionalHandle, u32 serviceId, u32 *buffer);
 void sender(void);
 void PXISRV11Handler(void);

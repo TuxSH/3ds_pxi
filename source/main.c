@@ -195,7 +195,8 @@ int main(void)
     }
 
     u32 PXIMC_OnPXITerminate = 0x10000; //TODO: see if this is correct
-    sendPXICommand(NULL, 0, &PXIMC_OnPXITerminate);
+    sessionManager.sessionData[0].state = STATE_SENT_TO_ARM9;
+    sendPXICmdbuf(NULL, 0, &PXIMC_OnPXITerminate);
 
     assertSuccess(MyThread_Join(&receiverThread, -1LL));
     assertSuccess(MyThread_Join(&senderThread, -1LL));

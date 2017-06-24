@@ -11,7 +11,7 @@ This is part of 3ds_pxi, which is licensed under the MIT license (see LICENSE fo
 #include "PXI.h"
 #include "memory.h"
 
-Result sendPXICommand(Handle *additionalHandle, u32 serviceId, u32 *buffer)
+Result sendPXICmdbuf(Handle *additionalHandle, u32 serviceId, u32 *buffer)
 {
 
     Result res = 0;
@@ -83,7 +83,7 @@ void sender(void)
     Handle handles[12] = {terminationRequestedEvent, sessionManager.sendAllBuffersToArm9Event, sessionManager.replySemaphore};
     Handle replyTarget = 0;
     Result res = 0;
-    s32 index = 0;
+    s32 index;
 
     u32 *cmdbuf = getThreadCommandBuffer();
 
@@ -97,7 +97,6 @@ void sender(void)
 
     do
     {
-
         if(replyTarget == 0) //send to arm9
         {
             for(u32 i = 0; i < 9; i++)
@@ -117,7 +116,7 @@ void sender(void)
 
                 RecursiveLock_Lock(&data->lock);
                 data->state = STATE_SENT_TO_ARM9;
-                res = sendPXICommand(&terminationRequestedEvent, i, data->buffer);
+                res = sendPXICmdbuf(&terminationRequestedEvent, i, data->buffer);
                 RecursiveLock_Unlock(&data->lock);
 
                 if(R_FAILED(res))
@@ -161,80 +160,84 @@ void sender(void)
         else if(R_FAILED(res) || (u32)index >= 3 + nbIdleSessions)
             svcBreak(USERBREAK_PANIC);
 
-
-        if(index == 0) //terminaton requested
-            break;
-        else if(index == 1)
+        switch(index)
         {
-            replyTarget = 0;
-            continue;
-        }
-        else if(index == 2) //arm9 reply
-        {
-            u32 sessionId = 0;
-            for(sessionId = 0; sessionId < 9 && sessionManager.sessionData[sessionId].state != STATE_RECEIVED_FROM_ARM9; sessionId++);
-            if(sessionId == 9) svcBreak(USERBREAK_PANIC);
-            SessionData *data = &sessionManager.sessionData[sessionId];
+            case 0: //terminaton requested
+                break;
 
-            RecursiveLock_Lock(&data->lock);
-            if(data->state != STATE_RECEIVED_FROM_ARM9) svcBreak(USERBREAK_PANIC);
-            if(sessionManager.latest_PXI_MC5_val == 2)
+            case 1:
+                replyTarget = 0;
+                continue;
+
+            case 2: //arm9 reply
             {
-                if(sessionManager.pendingArm9Commands != 0) svcBreak(USERBREAK_PANIC);
-                sessionManager.sendingDisabled = false;
-            }
-            else if(sessionManager.latest_PXI_MC5_val == 0)
-                (sessionManager.pendingArm9Commands)--;
+                u32 sessionId = 0;
+                for(sessionId = 0; sessionId < 9 && sessionManager.sessionData[sessionId].state != STATE_RECEIVED_FROM_ARM9; sessionId++);
+                if(sessionId == 9) svcBreak(USERBREAK_PANIC);
+                SessionData *data = &sessionManager.sessionData[sessionId];
 
-            u32 bufSize = 4 * ((data->buffer[0] & 0x3F) + ((data->buffer[0] & 0xFC0) >> 6) + 1);
-            if(bufSize > 0x100) svcBreak(USERBREAK_PANIC);
-            memcpy(cmdbuf, data->buffer, bufSize);
+                RecursiveLock_Lock(&data->lock);
+                if(data->state != STATE_RECEIVED_FROM_ARM9) svcBreak(USERBREAK_PANIC);
+                if(sessionManager.latest_PXI_MC5_val == 2)
+                {
+                    if(sessionManager.pendingArm9Commands != 0) svcBreak(USERBREAK_PANIC);
+                    sessionManager.sendingDisabled = false;
+                }
+                else if(sessionManager.latest_PXI_MC5_val == 0)
+                    (sessionManager.pendingArm9Commands)--;
 
-            releaseStaticBuffers(&data->usedStaticBuffers, 4);
+                u32 bufSize = 4 * ((data->buffer[0] & 0x3F) + ((data->buffer[0] & 0xFC0) >> 6) + 1);
+                if(bufSize > 0x100) svcBreak(USERBREAK_PANIC);
+                memcpy(cmdbuf, data->buffer, bufSize);
 
-            data->state = STATE_IDLE;
-            replyTarget = data->handle;
+                releaseStaticBuffers(&data->usedStaticBuffers, 4);
 
-            RecursiveLock_Unlock(&data->lock);
-        }
-        else //arm11 command received
-        {
-            u32 serviceId = posToServiceId[index - 3];
-            SessionData *data = &sessionManager.sessionData[serviceId];
-            RecursiveLock_Lock(&data->lock);
+                data->state = STATE_IDLE;
+                replyTarget = data->handle;
 
-            if(data->state != STATE_IDLE) svcBreak(USERBREAK_PANIC);
-
-            if(!(serviceId == 0 && (cmdbuf[0] >> 16) == 5)) //if not pxi:mc 5
-                sessionManager.latest_PXI_MC5_val = 0;
-            else if((u8)(cmdbuf[1]) != 0)
-            {
-                sessionManager.latest_PXI_MC5_val = 1;
-                if(sessionManager.sendingDisabled) svcBreak(USERBREAK_PANIC);
-                sessionManager.sendingDisabled = true;
-            }
-            else
-            {
-                sessionManager.latest_PXI_MC5_val = 2;
-                if(!sessionManager.sendingDisabled) svcBreak(USERBREAK_PANIC);
+                RecursiveLock_Unlock(&data->lock);
+                break;
             }
 
-            u32 bufSize = 4 * ((cmdbuf[0] & 0x3F) + ((cmdbuf[0] & 0xFC0) >> 6) + 1);
-            if(bufSize > 0x100) svcBreak(USERBREAK_PANIC);
-            memcpy(data->buffer, cmdbuf, bufSize);
+            default: //arm11 command received
+            {
+                u32 serviceId = posToServiceId[index - 3];
+                SessionData *data = &sessionManager.sessionData[serviceId];
+                RecursiveLock_Lock(&data->lock);
 
-            data->state = STATE_RECEIVED_FROM_ARM11;
-            replyTarget = 0;
+                if(data->state != STATE_IDLE) svcBreak(USERBREAK_PANIC);
 
-            releaseStaticBuffers(&sessionManager.currentlyProvidedStaticBuffers, 4 - nbStaticBuffersByService[serviceId]);
-            data->usedStaticBuffers = sessionManager.currentlyProvidedStaticBuffers;
-            acquireStaticBuffers();
+                if(!(serviceId == 0 && (cmdbuf[0] >> 16) == 5)) //if not pxi:mc 5
+                    sessionManager.latest_PXI_MC5_val = 0;
+                else if((u8)(cmdbuf[1]) != 0)
+                {
+                    sessionManager.latest_PXI_MC5_val = 1;
+                    if(sessionManager.sendingDisabled) svcBreak(USERBREAK_PANIC);
+                    sessionManager.sendingDisabled = true;
+                }
+                else
+                {
+                    sessionManager.latest_PXI_MC5_val = 2;
+                    if(!sessionManager.sendingDisabled) svcBreak(USERBREAK_PANIC);
+                }
 
-            RecursiveLock_Unlock(&data->lock);
+                u32 bufSize = 4 * ((cmdbuf[0] & 0x3F) + ((cmdbuf[0] & 0xFC0) >> 6) + 1);
+                if(bufSize > 0x100) svcBreak(USERBREAK_PANIC);
+                memcpy(data->buffer, cmdbuf, bufSize);
 
+                data->state = STATE_RECEIVED_FROM_ARM11;
+                replyTarget = 0;
+
+                releaseStaticBuffers(&sessionManager.currentlyProvidedStaticBuffers, 4 - nbStaticBuffersByService[serviceId]);
+                data->usedStaticBuffers = sessionManager.currentlyProvidedStaticBuffers;
+                acquireStaticBuffers();
+
+                RecursiveLock_Unlock(&data->lock);
+                break;
+            }
         }
     }
-    while(!shouldTerminate);
+    while(index != 0);
 
 terminate:
     for(u32 i = 0; i < 9; i++)
@@ -284,7 +287,7 @@ void PXISRV11Handler(void)
                     svcBreak(USERBREAK_PANIC);
             }
 
-            assertSuccess(sendPXICommand(&terminationRequestedEvent, 9, data->buffer));
+            assertSuccess(sendPXICmdbuf(&terminationRequestedEvent, 9, data->buffer));
             data->state = STATE_SENT_TO_ARM9;
             RecursiveLock_Unlock(&data->lock);
         }
