@@ -51,7 +51,7 @@ static void updateTLSForStaticBuffers(void)
     u32 val = sessionManager.currentlyProvidedStaticBuffers;
     for(u32 i = 0; i < 4; i++)
     {
-        s32 pos = getMSBPosition(val);
+        s32 pos = getLSBPosition(val);
         if(pos != -1)
         {
             staticBufs[2 * i] = IPC_Desc_StaticBuffer(0x1000, 0);
