@@ -1,5 +1,5 @@
 /*
-main.c 
+main.c
     (De)initialization stuff. It's also here where sessions are being accepted.
 
 (c) TuxSH, 2016
@@ -13,8 +13,8 @@ This is part of 3ds_pxi, which is licensed under the MIT license (see LICENSE fo
 #include "sender.h"
 #include "memory.h"
 
-Handle PXISyncInterrupt = (Handle)0, PXITransferMutex = (Handle)0;
-Handle terminationRequestedEvent = (Handle)0;
+Handle PXISyncInterrupt = 0, PXITransferMutex = 0;
+Handle terminationRequestedEvent = 0;
 bool shouldTerminate = false;
 SessionManager sessionManager = {0};
 
@@ -32,7 +32,8 @@ const char *serviceNames[10] =
     "pxi:dev", //in the official PXI module maxSessions(pxi:dev) == 2. It doesn't matter anyways, since srvSysRegisterService is always called with 1
     "pxi:am9",
     "pxi:ps9",
-    "pxi:srv11"
+
+    "pxi:srv11",
 };
 
 const u32 nbStaticBuffersByService[10] = {0, 2, 2, 2, 2, 1, 4, 4, 4, 0};
@@ -42,15 +43,15 @@ u32 __attribute__((aligned(0x1000))) staticBuffers[NB_STATIC_BUFFERS][0x400] = {
 static inline void initPXI(void)
 {
     Result res;
-    
-    Handle handles[2] = {(Handle) 0};
+
+    Handle handles[2] = {0};
 
     PXIReset();
 
-    if(PXISyncInterrupt != (Handle)0) svcBreak(USERBREAK_PANIC); //0xE0A0183B
+    if(PXISyncInterrupt != 0) svcBreak(USERBREAK_PANIC); //0xE0A0183B
     assertSuccess(svcCreateEvent(&PXISyncInterrupt, RESET_ONESHOT));
 
-    if(PXITransferMutex != (Handle)0) svcBreak(USERBREAK_PANIC); //0xE0A0183B
+    if(PXITransferMutex != 0) svcBreak(USERBREAK_PANIC); //0xE0A0183B
     assertSuccess(svcCreateMutex(&PXITransferMutex, false));
 
     assertSuccess(svcCreateEvent(&handles[0], RESET_ONESHOT)); //receive FIFO not empty
@@ -67,7 +68,7 @@ static inline void initPXI(void)
             assertSuccess(svcWaitSynchronizationN(&handleIndex, handles, 2, false, -1LL));
         else
             handleIndex = 0;
-    } while(handleIndex != 0); 
+    } while(handleIndex != 0);
 
 
 
@@ -102,7 +103,7 @@ static u8 __attribute__((aligned(THREAD_STACK_SIZE))) PXISRV11HandlerStack[THREA
 void __appInit()
 {
     assertSuccess(svcCreateEvent(&terminationRequestedEvent, RESET_STICKY));
-    
+
     assertSuccess(svcCreateEvent(&(sessionManager.sendAllBuffersToArm9Event), RESET_ONESHOT));
     assertSuccess(svcCreateSemaphore(&(sessionManager.replySemaphore), 0, 9));
     assertSuccess(svcCreateEvent(&(sessionManager.PXISRV11CommandReceivedEvent), RESET_ONESHOT));
@@ -135,7 +136,7 @@ void __ctru_exit()
   __sync_fini();
   svcExitProcess();
 }
- 
+
 void initSystem()
 {
   __sync_init();
@@ -145,15 +146,15 @@ void initSystem()
 
 int main(void)
 {
-    Handle handles[10] = {(Handle)0}; //notification handle + service handles
-    MyThread receiverThread = {0}, senderThread = {0}, PXISRV11HandlerThread = {0}; 
+    Handle handles[10] = {0}; //notification handle + service handles
+    MyThread receiverThread = {0}, senderThread = {0}, PXISRV11HandlerThread = {0};
 
     for(u32 i = 0; i < 9; i++)
         assertSuccess(srvRegisterService(handles + 1 + i, serviceNames[i], 1));
 
-    assertSuccess(MyThread_Create(&receiverThread, receiver, receiverStack, 0x2D, -2));
-    assertSuccess(MyThread_Create(&senderThread, sender, senderStack, 0x2D, -2));
-    assertSuccess(MyThread_Create(&PXISRV11HandlerThread, PXISRV11Handler, PXISRV11HandlerStack, 0x2D, -2));
+    assertSuccess(MyThread_Create(&receiverThread, receiver, receiverStack, THREAD_STACK_SIZE, 0x2D, -2));
+    assertSuccess(MyThread_Create(&senderThread, sender, senderStack, THREAD_STACK_SIZE, 0x2D, -2));
+    assertSuccess(MyThread_Create(&PXISRV11HandlerThread, PXISRV11Handler, PXISRV11HandlerStack, THREAD_STACK_SIZE, 0x2D, -2));
 
     assertSuccess(srvEnableNotification(&handles[0]));
 
@@ -161,28 +162,28 @@ int main(void)
     {
         s32 index = 0;
         assertSuccess(svcWaitSynchronizationN(&index, handles, 10, false, -1LL));
-    
+
         if(index == 0)
         {
             u32 notificationId;
             assertSuccess(srvReceiveNotification(&notificationId));
             if(notificationId == 0x100) shouldTerminate = true;
         }
-        
+
         else
         {
-            Handle session = (Handle)0;
-            SessionData *data = &(sessionManager.sessionData[index - 1]);
+            Handle session = 0;
+            SessionData *data = &sessionManager.sessionData[index - 1];
             assertSuccess(svcAcceptSession(&session, handles[index]));
-            
-            RecursiveLock_Lock(&(sessionManager.senderLock));
-            if(data->handle != (Handle)0)
+
+            RecursiveLock_Lock(&sessionManager.senderLock);
+            if(data->handle != 0)
                 svcBreak(USERBREAK_PANIC);
 
             data->handle = session;
             assertSuccess(svcSignalEvent(sessionManager.sendAllBuffersToArm9Event));
 
-            RecursiveLock_Unlock(&(sessionManager.senderLock));
+            RecursiveLock_Unlock(&sessionManager.senderLock);
         }
 
     }

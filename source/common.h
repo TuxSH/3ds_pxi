@@ -85,16 +85,14 @@ static inline Result assertSuccess(Result res)
     return res;
 }
 
-static inline u32 __clz(u32 val)
-{
-    u32 res;
-    __asm__ volatile("clz %[res], %[val]" : [res] "=r" (res) : [val] "r" (val));
-    return res;
-}
-
 static inline s32 getMSBPosition(u32 val)
 {
-    return 31 - (s32) __clz(val);
+    return 31 - (s32) __builtin_clz(val);
+}
+
+static inline s32 getLSBPosition(u32 val)
+{
+    return __builtin_ffs(val) - 1;
 }
 
 static inline u32 clearMSBs(u32 val, u32 nb)

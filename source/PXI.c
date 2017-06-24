@@ -9,7 +9,7 @@ This is part of 3ds_pxi, which is licensed under the MIT license (see LICENSE fo
 #include "PXI.h"
 
 void PXIReset(void)
-{   
+{
     REG_PXI_SYNC = 0;
     REG_PXI_CNT = CNT_CLEAR_SEND_FIFO;
 
@@ -80,7 +80,7 @@ void PXIReceiveBuffer(u32 *buffer, u32 nbWords)
 
 Result bindPXIInterrupts(Handle *syncInterrupt, Handle *receiveFIFONotEmptyInterrupt, Handle *sendFIFOEmptyInterrupt)
 {
-    Result res;
+    Result res = 0;
     u32 mask = CNT_ENABLE_FIFOs | CNT_ENABLE_RECEIVE_FIFO_NOT_EMPTY_IRQ | CNT_ENABLE_SEND_FIFO_EMPTY_IRQ;
     if(receiveFIFONotEmptyInterrupt != NULL)
     {
@@ -100,7 +100,7 @@ Result bindPXIInterrupts(Handle *syncInterrupt, Handle *receiveFIFONotEmptyInter
         {
             unbindPXIInterrupts(syncInterrupt, receiveFIFONotEmptyInterrupt, sendFIFOEmptyInterrupt);
             return res;
-        }       
+        }
         REG_PXI_CNT = (REG_PXI_CNT & mask) | CNT_ENABLE_SEND_FIFO_EMPTY_IRQ;
     }
 
@@ -111,8 +111,8 @@ Result bindPXIInterrupts(Handle *syncInterrupt, Handle *receiveFIFONotEmptyInter
         {
             unbindPXIInterrupts(syncInterrupt, receiveFIFONotEmptyInterrupt, sendFIFOEmptyInterrupt);
             return res;
-        }   
-        REG_PXI_INTERRUPT_CNT |= SYNC_ENABLE_SYNC11_IRQ;    
+        }
+        REG_PXI_INTERRUPT_CNT |= SYNC_ENABLE_SYNC11_IRQ;
     }
 
     return res;
@@ -125,7 +125,7 @@ void unbindPXIInterrupts(Handle *syncInterrupt, Handle *receiveFIFONotEmptyInter
         REG_PXI_CNT &= CNT_ENABLE_FIFOs | CNT_ENABLE_SEND_FIFO_EMPTY_IRQ;
         svcUnbindInterrupt(0x53, *receiveFIFONotEmptyInterrupt);
     }
-    
+
     if(sendFIFOEmptyInterrupt != NULL)
     {
         REG_PXI_CNT &= CNT_ENABLE_FIFOs | CNT_ENABLE_RECEIVE_FIFO_NOT_EMPTY_IRQ;

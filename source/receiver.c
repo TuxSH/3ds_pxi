@@ -13,13 +13,13 @@ This is part of 3ds_pxi, which is licensed under the MIT license (see LICENSE fo
 static inline void receiveArm9Reply(void)
 {
     u32 serviceId = PXIReceiveWord();
-    
+
     //The offcical implementation can return 0xD90043FA
     if(serviceId >= 10 || sessionManager.sessionData[serviceId].state != STATE_ARM9_COMMAND_SENT)
         svcBreak(USERBREAK_PANIC);
 
     sessionManager.receivedServiceId = serviceId;
-    RecursiveLock_Lock(&(sessionManager.sessionData[serviceId].lock));
+    RecursiveLock_Lock(&sessionManager.sessionData[serviceId].lock);
     u32 replyHeader = PXIReceiveWord();
     u32 replySizeWords = (replyHeader & 0x3F) + ((replyHeader & 0xFC0) >> 6) + 1;
 
@@ -30,7 +30,7 @@ static inline void receiveArm9Reply(void)
     buf[0] = replyHeader;
     PXIReceiveBuffer(buf + 1, replySizeWords - 1);
     sessionManager.sessionData[serviceId].state = STATE_ARM9_REPLY_RECEIVED;
-    RecursiveLock_Unlock(&(sessionManager.sessionData[serviceId].lock));
+    RecursiveLock_Unlock(&sessionManager.sessionData[serviceId].lock);
 
     if(serviceId == 0 && shouldTerminate)
     {

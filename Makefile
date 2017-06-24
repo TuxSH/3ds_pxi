@@ -24,9 +24,9 @@ LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 INCLUDE	:= $(foreach dir,$(LIBDIRS),-I$(dir)/include)
 
 ARCH := -mcpu=mpcore -mfloat-abi=hard -mtp=soft
-CFLAGS := -Wall -Wextra -MMD -MP -marm $(ARCH) -fno-builtin -std=c11 -O2 -flto -ffast-math -mword-relocations \
+CFLAGS := -Wall -Wextra -MMD -MP -marm $(ARCH) -fno-builtin -std=c11 -O2 -ffast-math -mword-relocations \
 	  -ffunction-sections -fdata-sections $(INCLUDE) -DARM11 -D_3DS
-LDFLAGS := -specs=3dsx.specs $(ARCH) 
+LDFLAGS := -specs=3dsx.specs -Wl,--gc-sections $(ARCH)
 
 objects = $(patsubst $(dir_source)/%.c, $(dir_build)/%.o, \
           $(call rwildcard, $(dir_source), *.c))

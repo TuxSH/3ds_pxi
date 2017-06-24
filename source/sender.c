@@ -15,7 +15,7 @@ Result sendPXICommand(Handle *additionalHandle, u32 serviceId, u32 *buffer)
 {
 
     Result res = 0;
-    
+
     if(additionalHandle != NULL)
     {
         s32 index = 1;
@@ -45,23 +45,30 @@ Result sendPXICommand(Handle *additionalHandle, u32 serviceId, u32 *buffer)
     return 0;
 }
 
-static void acquireStaticBuffers(void)
+static void updateTLSForStaticBuffers(void)
 {
     u32 *staticBufs = getThreadStaticBuffers();
-    u32 freeStaticBuffersOrig = sessionManager.freeStaticBuffers;
+    u32 val = sessionManager.currentlyProvidedStaticBuffers;
     for(u32 i = 0; i < 4; i++)
     {
-        s32 pos = getMSBPosition(sessionManager.freeStaticBuffers);
+        s32 pos = getMSBPosition(val);
         if(pos != -1)
         {
             staticBufs[2 * i] = IPC_Desc_StaticBuffer(0x1000, 0);
-            staticBufs[2 * i + 1] = (u32)&(staticBuffers[pos]);
-            sessionManager.freeStaticBuffers &= ~(1 << pos);
+            staticBufs[2 * i + 1] = (u32)&staticBuffers[pos];
+            val &= ~(1 << pos);
         }
-        else 
+        else
             staticBufs[2 * i] = IPC_Desc_StaticBuffer(0, 0);
     }
-    sessionManager.currentlyProvidedStaticBuffers = ~sessionManager.freeStaticBuffers & freeStaticBuffersOrig; 
+}
+
+static void acquireStaticBuffers(void)
+{
+    u32 freeStaticBuffersOrig = sessionManager.freeStaticBuffers;
+    sessionManager.freeStaticBuffers = clearMSBs(sessionManager.freeStaticBuffers, 4);
+    sessionManager.currentlyProvidedStaticBuffers = ~sessionManager.freeStaticBuffers & freeStaticBuffersOrig;
+    updateTLSForStaticBuffers();
 }
 
 static void releaseStaticBuffers(u32 *src, u32 nb)
@@ -75,7 +82,7 @@ void sender(void)
 {
 
     Handle handles[13] = {terminationRequestedEvent, sessionManager.sendAllBuffersToArm9Event, sessionManager.replySemaphore};
-    Handle replyTarget = (Handle)0;
+    Handle replyTarget = 0;
     Result res = 0;
     s32 index = 0;
 
@@ -83,23 +90,23 @@ void sender(void)
 
     u32 nbIdleSessions = 0;
     u32 posToServiceId[10] = {0};
-    RecursiveLock_Lock(&(sessionManager.senderLock));
+    RecursiveLock_Lock(&sessionManager.senderLock);
 
     //Setting static buffers is needed for IPC translation types 2 and 3 (otherwise ReplyAndReceive will dereference NULL)
     sessionManager.freeStaticBuffers = (1 << NB_STATIC_BUFFERS) - 1;
     acquireStaticBuffers();
 
     do
-    {               
+    {
 
-        if(replyTarget == (Handle)0) //send to arm9
+        if(replyTarget == 0) //send to arm9
         {
             for(u32 i = 0; i < 10; i++)
             {
-                SessionData *data = &(sessionManager.sessionData[i]);
-                if(data->handle == (Handle)0 || data->state != STATE_ARM11_COMMAND_RECEIVED)
+                SessionData *data = &sessionManager.sessionData[i];
+                if(data->handle == 0 || data->state != STATE_ARM11_COMMAND_RECEIVED)
                     continue;
-                
+
                 if(sessionManager.sendingDisabled)
                 {
                     if (sessionManager.pendingArm9Commands != 0 || sessionManager.latest_PXI_MC5_val == 0)
@@ -107,13 +114,13 @@ void sender(void)
                 }
 
                 else
-                    (sessionManager.pendingArm9Commands)++;
-                
-                RecursiveLock_Lock(&(data->lock));
+                    sessionManager.pendingArm9Commands++;
+
+                RecursiveLock_Lock(&data->lock);
                 data->state = STATE_ARM9_COMMAND_SENT;
                 res = sendPXICommand(&terminationRequestedEvent, i, data->buffer);
-                RecursiveLock_Unlock(&(data->lock));
-                
+                RecursiveLock_Unlock(&data->lock);
+
                 if(R_FAILED(res))
                     goto terminate;
 
@@ -131,14 +138,14 @@ void sender(void)
             }
         }
 
-        RecursiveLock_Unlock(&(sessionManager.senderLock));
+        RecursiveLock_Unlock(&sessionManager.senderLock);
         res = svcReplyAndReceive(&index, handles, 3 + nbIdleSessions, replyTarget);
-        RecursiveLock_Lock(&(sessionManager.senderLock));
+        RecursiveLock_Lock(&sessionManager.senderLock);
 
         if((u32)res == 0xC920181A) //session closed by remote
         {
             u32 i;
-            
+
             if(index == -1)
                 for(i = 0; i < 10 && replyTarget != sessionManager.sessionData[i].handle; i++);
 
@@ -148,21 +155,21 @@ void sender(void)
             if(i >= 10) svcBreak(USERBREAK_PANIC);
 
             svcCloseHandle(sessionManager.sessionData[i].handle);
-            sessionManager.sessionData[i].handle = replyTarget = (Handle)0;
+            sessionManager.sessionData[i].handle = replyTarget = 0;
             continue;
         }
 
         else if(R_FAILED(res) || (u32)index >= 3 + nbIdleSessions)
             svcBreak(USERBREAK_PANIC);
 
-        
+
         if(index == 0) //terminaton requested
         {
             break;
         }
         else if(index == 1)
         {
-            replyTarget = (Handle)0;
+            replyTarget = 0;
             continue;
         }
         else if(index == 2) //arm9 reply
@@ -170,28 +177,28 @@ void sender(void)
             u32 sessionId = 0;
             for(sessionId = 0; sessionId < 10 && sessionManager.sessionData[sessionId].state != STATE_ARM9_REPLY_RECEIVED; sessionId++);
             if(sessionId == 10) svcBreak(USERBREAK_PANIC);
-            SessionData *data = &(sessionManager.sessionData[sessionId]);
+            SessionData *data = &sessionManager.sessionData[sessionId];
 
-            RecursiveLock_Lock(&(data->lock));
+            RecursiveLock_Lock(&data->lock);
             if(data->state != STATE_ARM9_REPLY_RECEIVED) svcBreak(USERBREAK_PANIC);
             if(sessionManager.latest_PXI_MC5_val == 2)
             {
                 if(sessionManager.pendingArm9Commands != 0) svcBreak(USERBREAK_PANIC);
                 sessionManager.sendingDisabled = false;
             }
-            else if(sessionManager.latest_PXI_MC5_val == 0) 
+            else if(sessionManager.latest_PXI_MC5_val == 0)
                 (sessionManager.pendingArm9Commands)--;
 
             u32 bufSize = 4 * ((data->buffer[0] & 0x3F) + ((data->buffer[0] & 0xFC0) >> 6) + 1);
             if(bufSize > 0x100) svcBreak(USERBREAK_PANIC);
             memcpy(cmdbuf, data->buffer, bufSize);
 
-            releaseStaticBuffers(&(data->usedStaticBuffers), 4);
+            releaseStaticBuffers(&data->usedStaticBuffers, 4);
 
             data->state = STATE_IDLE;
             replyTarget = data->handle;
-            
-            RecursiveLock_Unlock(&(data->lock));
+
+            RecursiveLock_Unlock(&data->lock);
 
         }
         else //arm11 command received
@@ -219,14 +226,14 @@ void sender(void)
             u32 bufSize = 4 * ((cmdbuf[0] & 0x3F) + ((cmdbuf[0] & 0xFC0) >> 6) + 1);
             if(bufSize > 0x100) svcBreak(USERBREAK_PANIC);
             memcpy(data->buffer, cmdbuf, bufSize);
-            
-            data->state = STATE_ARM11_COMMAND_RECEIVED;
-            replyTarget = (Handle) 0;
 
-            releaseStaticBuffers(&(sessionManager.currentlyProvidedStaticBuffers), 4 - nbStaticBuffersByService[serviceId]);
+            data->state = STATE_ARM11_COMMAND_RECEIVED;
+            replyTarget = 0;
+
+            releaseStaticBuffers(&sessionManager.currentlyProvidedStaticBuffers, 4 - nbStaticBuffersByService[serviceId]);
             data->usedStaticBuffers = sessionManager.currentlyProvidedStaticBuffers;
             acquireStaticBuffers();
-            
+
             RecursiveLock_Unlock(&(data->lock));
 
         }
@@ -240,7 +247,7 @@ terminate:
             svcCloseHandle(sessionManager.sessionData[i].handle);
     }
 
-    RecursiveLock_Unlock(&(sessionManager.senderLock));
+    RecursiveLock_Unlock(&sessionManager.senderLock);
 }
 
 void PXISRV11Handler(void)
@@ -256,9 +263,9 @@ void PXISRV11Handler(void)
         if(index == 1) return;
         else
         {
-            SessionData *data = &(sessionManager.sessionData[9]);
-            RecursiveLock_Lock(&(data->lock));
-            
+            SessionData *data = &sessionManager.sessionData[9];
+            RecursiveLock_Lock(&data->lock);
+
             if(data->buffer[0] >> 16 != 1)
             {
                 data->buffer[0] = 0x40;
@@ -273,7 +280,7 @@ void PXISRV11Handler(void)
             }
 
             assertSuccess(sendPXICommand(&terminationRequestedEvent, 9, data->buffer));
-            RecursiveLock_Unlock(&(data->lock));
+            RecursiveLock_Unlock(&data->lock);
         }
     }
 }
