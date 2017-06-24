@@ -2,39 +2,13 @@
 common.h:
     Common types and global variables.
 
-(c) TuxSH, 2016
+(c) TuxSH, 2016-2017
 This is part of 3ds_pxi, which is licensed under the MIT license (see LICENSE for details).
 */
 
 #pragma once
 
 #include <3ds.h>
-
-/*
-typedef struct
-{
-    const char *name;
-    u8 id;
-    u8 unknown;
-    u8 maxSessions;
-} ServiceInfo;
-*/
-
-/*
-const ServiceInfo servicesInfo[10] =
-{
-    {"PxiFS0", 1, 2, 1},
-    {"PxiFS1", 2, 2, 1},
-    {"PxiFSB", 3, 2, 1},
-    {"PxiFSR", 4, 2, 1},
-
-    {"PxiPM", 5, 1, 1},
-
-    {"pxi:am9", 7, 4, 1},
-    {"pxi:dev", 6, 4, 1}, //in the official PXI module maxSessions == 2. It doesn't matter anyways, since srvSysRegisterService is always called with 1
-    {"pxi:mc", 0, 0, 1},
-    {"pxi:ps9", 8, 4, 1}
-*/
 
 typedef enum SessionState
 {
@@ -52,8 +26,7 @@ typedef struct SessionData
     Handle handle;
     u32 usedStaticBuffers;
 
-    RecursiveLock lock; //why is this needed?
-
+    RecursiveLock lock;
 } SessionData;
 
 #define NB_STATIC_BUFFERS 21
@@ -65,11 +38,12 @@ typedef struct SessionManager
     u32 receivedServiceId;
     RecursiveLock senderLock;
     bool sendingDisabled;
-    SessionData sessionData[10]; //9 actual services + 1 deleted service
+    SessionData sessionData[10];
 
     u32 currentlyProvidedStaticBuffers, freeStaticBuffers;
 } SessionManager;
 
+//Page alignment is mandatory there
 extern u32 __attribute__((aligned(0x1000))) staticBuffers[NB_STATIC_BUFFERS][0x1000/4];
 
 extern Handle PXISyncInterrupt, PXITransferMutex;
