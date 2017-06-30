@@ -23,7 +23,7 @@ AccessControlInfo:
 
   Priority                      : 13
 
-  DisableDebug                  : true
+  DisableDebug                  : false
   EnableForceDebug              : false
   CanWriteSharedPage            : false
   CanUsePrivilegedPriority      : false
