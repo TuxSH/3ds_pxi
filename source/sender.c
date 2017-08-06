@@ -259,6 +259,7 @@ void PXISRV11Handler(void)
     SessionData *data = &sessionManager.sessionData[9];
 
     data->state = STATE_SENT_TO_ARM9;
+    assertSuccess(svcSignalEvent(sessionManager.PXISRV11ReplySentEvent));
 
     while(true)
     {
@@ -292,6 +293,7 @@ void PXISRV11Handler(void)
 
             assertSuccess(sendPXICmdbuf(&terminationRequestedEvent, 9, data->buffer));
             data->state = STATE_SENT_TO_ARM9;
+            assertSuccess(svcSignalEvent(sessionManager.PXISRV11ReplySentEvent));
             RecursiveLock_Unlock(&data->lock);
         }
     }

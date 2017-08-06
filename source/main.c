@@ -107,6 +107,7 @@ void __appInit()
     assertSuccess(svcCreateEvent(&sessionManager.sendAllBuffersToArm9Event, RESET_ONESHOT));
     assertSuccess(svcCreateSemaphore(&sessionManager.replySemaphore, 0, 9));
     assertSuccess(svcCreateEvent(&sessionManager.PXISRV11CommandReceivedEvent, RESET_ONESHOT));
+    assertSuccess(svcCreateEvent(&sessionManager.PXISRV11ReplySentEvent, RESET_ONESHOT));    
     initPXI();
 
     for(Result res = 0xD88007FA; res == (Result)0xD88007FA; svcSleepThread(500 * 1000LL))
@@ -127,6 +128,7 @@ void __appExit()
     svcCloseHandle(sessionManager.sendAllBuffersToArm9Event);
     svcCloseHandle(sessionManager.replySemaphore);
     svcCloseHandle(sessionManager.PXISRV11CommandReceivedEvent);
+    svcCloseHandle(sessionManager.PXISRV11ReplySentEvent);
 }
 
 // stubs for non-needed pre-main functions

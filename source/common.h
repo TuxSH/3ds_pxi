@@ -33,7 +33,7 @@ typedef struct SessionData
 
 typedef struct SessionManager
 {
-    Handle sendAllBuffersToArm9Event, replySemaphore, PXISRV11CommandReceivedEvent;
+    Handle sendAllBuffersToArm9Event, replySemaphore, PXISRV11CommandReceivedEvent, PXISRV11ReplySentEvent;
     u32 latest_PXI_MC5_val, pendingArm9Commands;
     u32 receivedServiceId;
     RecursiveLock senderLock;

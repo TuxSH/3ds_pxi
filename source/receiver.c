@@ -15,7 +15,7 @@ static inline void receiveFromArm9(void)
     u32 serviceId = PXIReceiveWord();
 
     //The offcical implementation can return 0xD90043FA
-    if(serviceId >= 10 || (sessionManager.sessionData[serviceId].state != STATE_SENT_TO_ARM9))
+    if(((serviceId >= 10)) || (sessionManager.sessionData[serviceId].state != STATE_SENT_TO_ARM9))
         svcBreak(USERBREAK_PANIC);
 
     sessionManager.receivedServiceId = serviceId;
@@ -44,13 +44,19 @@ static inline void receiveFromArm9(void)
         assertSuccess(svcReleaseSemaphore(&count, sessionManager.replySemaphore, 1));
     }
     else
+    {
         assertSuccess(svcSignalEvent(sessionManager.PXISRV11CommandReceivedEvent));
+        assertSuccess(svcWaitSynchronization(sessionManager.PXISRV11ReplySentEvent, -1LL));
+        if( (sessionManager.sessionData[serviceId].state != STATE_SENT_TO_ARM9))
+            svcBreak(USERBREAK_PANIC);
+    }
 }
 
 void receiver(void)
 {
     Handle handles[] = {PXISyncInterrupt, terminationRequestedEvent};
 
+    assertSuccess(svcWaitSynchronization(sessionManager.PXISRV11ReplySentEvent, -1LL));
     while(true)
     {
         s32 index;
