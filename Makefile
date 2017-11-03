@@ -6,13 +6,7 @@ endif
 
 include $(DEVKITARM)/3ds_rules
 
-CC := arm-none-eabi-gcc
-AS := arm-none-eabi-as
-LD := arm-none-eabi-ld
-OC := arm-none-eabi-objcopy
-
 name := pxi
-#$(shell basename $(CURDIR))
 
 dir_source := source
 dir_build := build
