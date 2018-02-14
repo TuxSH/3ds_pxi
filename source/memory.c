@@ -8,7 +8,7 @@ This is part of 3ds_pxi, which is licensed under the MIT license (see LICENSE fo
 
 #include "memory.h"
 
-//Adpated from CakesFW
+// Adapted from CakesFW
 void memcpy(void *dest, const void *src, u32 size)
 {
     u8 *destc = (u8 *)dest;
